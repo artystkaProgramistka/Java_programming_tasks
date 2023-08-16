@@ -1,0 +1,157 @@
+package zad2;
+
+import java.text.CollationKey;
+import java.text.Collator;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Locale;
+
+/**
+ * Klasa obiektu porównującego leksykograficznie obiekty typu E. Wszędzie
+ * gdzie potrzeba komparatora dla typu elementów mających swój porządek
+ * leksykograficzny można umieścić komparator w takiej postaci
+ * {@code new LexicOrder<E>()}, gdzie E jest klasą posiadającą jakiś
+ * porządek leksykograficzny obiektów w postaci tekstowej. Domyślnie
+ * porównywanie następuje wg porównania leksykograficznego dla domyślnego
+ * alfabetu domyślnego języka w bieżącej JVM. Komparator porównuje elementy
+ * na podstawie przeprowadzonej ekstrakcji obiektów CollationKey dla postaci
+ * tekstowej porównywanych elementów. Klucze porównywania dla poszczególnych
+ * elementów są przy użyciu generowane i zachowywane do późniejszego użycia.
+ * Pozwala to na efektywne sortowanie lub inne operacje wymagające wielu
+ * porównań tych samych elementów. Domyślny sposób użycia:
+ * {@code new LexicOrder<>()} Zobacz:
+ * {@link SortedList},  {@link Lists}{@literal sortedBy()}
+ * @param <E> typ elementów listy
+ */
+public class LexicOrder<E> extends ArrayList<E> implements Comparator<E>
+{
+	/**
+	 * Tworzy obiekt porównujący postaci tekstowe elementów E w bieżącej
+	 * lokalizacji z domyślnym poziomem dekompozycji i siły porównywania.
+	 */
+	public LexicOrder()
+	{
+		this.collator = Collator.getInstance();
+	}
+	/**
+	 * Tworzy obiekt porównujący postaci tekstowe elementów E w podanej
+	 * lokalizacji, z domyślnym dla niej poziomem dekompozycji i siły
+	 * porównywania.
+	 * @param locale żądana lokalizacja
+	 */
+	public LexicOrder(Locale locale)
+	{
+		this.collator = Collator.getInstance(locale);
+	}
+	/**
+	 * Tworzy obiekt porównujący postaci tekstowe elementów E w podanej
+	 * lokalizacji, z podanym poziomem dekompozycji i siły porównywania.
+	 * @param locale żądana lokalizacja
+	 * @param decomposition żądany poziom dekompozycji
+	 * @param strength żądana dokładność porównywania
+	 */
+	public LexicOrder(Locale locale, int decomposition, int strength)
+	{
+		this.collator = Collator.getInstance(locale);
+		this.collator.setDecomposition(decomposition);
+		this.collator.setStrength(strength);
+	}
+	/**
+	 * Porównuje wartości tekstowe elementów e1 i e2 przy pomocy
+	 * wygenerowanego obiektu typu Collator oraz tworzonych z opóźnieniem
+	 * kluczy porównywania umieszczanych w mapie, która pozwala odzyskać te
+	 * klucze przy ponownym użyciu.
+	 * @param e1 pierwszy element
+	 * @param e2 drugi element
+	 * @return wynik porównania postaci tekstowych tych elementów
+	 */
+	@Override public int compare(E e1, E e2)
+	{
+		CollationKey ck1 = cache.get(e1), ck2 = cache.get(e2);
+		if(ck1 == null)
+			cache.put(e1, ck1 = collator.getCollationKey(e1.toString()));
+		if(ck2 == null)
+			cache.put(e2, ck2 = collator.getCollationKey(e2.toString()));
+		return ck1.compareTo(ck2);
+	}
+	private final HashMap<E, CollationKey> cache = new HashMap<>();
+	private final Collator collator;
+
+/**
+ * Tworzy listę elementów E o zawartości identycznej jak podawana lista,
+ * lecz posortowaną wg klucza podawanego przez comparator.
+ * @param <E> typ elementów
+ * @param list lista elementów
+ * @param comp comparator dwóch elementów typu E
+ * @return lista elementów posortowanych wg podanego indeksera
+ */
+public static <E> List<E> sortedBy(List<E> list, final Comparator<E> comp)
+{
+	final List<E> result = new ArrayList<>(list.size());
+	for(E element: list) //wstawia również elementy nieunikalne
+		Lists.sortingInsert(element, result, false, comp);
+	return result;
+}
+
+/**
+ * Przeszukuje za pomocą podziałów połówkowych całą posortowaną rosnąco
+ * listę o dostępie swobodnym i zwraca indeks znalezionego elementu toFind
+ * lub wartość -ins - 1, gdzie ins jest pozycją wstawienia elementu, czyli
+ * większy od pierwszego mniejszego elementu na liście. Metoda może być
+ * wykorzystana do szybkiego określenia występowania elementu toFind na
+ * liście list, czyli efektywnie zastąpić metodę contains().
+ * @param <E> typ elementu listy
+ * @param list posortowana rosnąco lista elementów
+ * @param toFind element, którego indeks jest do znalezienia
+ * @param c obiekt komparatora porównującego dwa elementy listy
+ * @return nieujemny indeks znalezionego elementu lub -punkt_wstawienia-1
+ */
+public static <E>
+	int binarySearch(E toFind, List<E> list, Comparator<? super E> c)
+{
+	int l = 0;
+	int r = list.size() - 1;
+	for(int cmp, mid = (l + r) >>> 1; l <= r; mid = (l + r) >>> 1)
+	{
+		cmp = c.compare(toFind, list.get(mid));
+		if(cmp > 0) l = ++mid;
+		else if(cmp < 0) r = --mid;
+		else return mid; //toFind found
+	}
+	return -(l + 1); //toFind not found.
+}
+
+/**
+ * Wstawia element toInsert do podanej posortowanej listy w taki sposób,
+ * aby znalazł się on między elementem mniejszym i większym. Elementy są
+ * porównywane za pomocą podanego komparatora. Parametr allowReplace
+ * pozwala na zastępowanie równych elementów już występujących na liście,
+ * czyli wymusza unikalność wartości wstawianych elementów.
+ * Pomyślne wstawienie/zastąpienie zwraca true, a brak wykonanej akcji
+ * zwraca false. Metoda może być efektywnie wykorzystana do szybkiego
+ * tworzenia posortowanych list.
+ * @param <E> typ elementu
+ * @param toInsert element do wstawienia na listę list
+ * @param list posortowana lista (może być pusta)
+ * @param comparator obiekt porównujący elementy
+ * @param allowReplace pozwala na zastępowanie elementów istniejących
+ * @return true w przypadku wstawienia unikalnego
+ */
+public static <E> boolean sortingInsert(E toInsert, List<E> list,
+	boolean allowReplace, Comparator<? super E> comparator)
+{
+	int found = binarySearch(toInsert, list, comparator);
+	if(found < 0)
+		list.add(-found - 1, toInsert);
+	else if(allowReplace)
+		list.set(found, toInsert); //dozwolone zastępowania
+	else //dostawia element równy przed istniejący
+	{
+		list.add(found, toInsert);
+		return false;
+	}
+	return true;
+}
+}
